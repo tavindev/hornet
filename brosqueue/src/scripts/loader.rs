@@ -39,7 +39,7 @@ pub struct Command {
     lua: String,
 }
 
-#[derive(Debug, Hash, Clone)]
+#[derive(Debug, Clone)]
 struct ScriptMetadata {
     parent_token: Option<String>,
     path: PathBuf,
