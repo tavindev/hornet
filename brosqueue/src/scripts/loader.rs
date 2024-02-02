@@ -1,4 +1,4 @@
-use anyhow::{Error, Ok, Result};
+use anyhow::{Error, Result};
 use lazy_static::lazy_static;
 use regex::Regex;
 use std::hash::{Hash, Hasher};
@@ -27,38 +27,53 @@ impl ScriptName {
     }
 }
 
+#[derive(Debug, PartialEq)]
+enum ScriptLoaderError {
+    CircularDependency,
+    IoError(String),
+}
+
 #[derive(Debug)]
 pub struct Command {
     name: ScriptName,
     lua: String,
 }
 
-#[derive(Debug, Eq, PartialEq, Hash, Clone)]
+#[derive(Debug, Hash, Clone)]
 struct ScriptMetadata {
+    parent_token: Option<String>,
     path: PathBuf,
     token: String,
     content: String,
 }
 
+impl PartialEq for ScriptMetadata {
+    fn eq(&self, other: &Self) -> bool {
+        self.token == other.token
+    }
+}
+
 pub struct ScriptLoader(HashMap<ScriptName, String>);
 
 impl ScriptLoader {
-    const SCRIPTS_PATH: &'static str = "./src/scripts/commands";
-    const INCLUDES_PATH: &'static str = "./src/scripts/commands/includes";
-    const INCLUDES_PREFIX: &'static str = "--- @include";
-
     pub fn new() -> Self {
         Self(HashMap::new())
     }
 
-    fn load_command(&self, path: &str) -> Result<Command> {
+    fn load_command(&self, path: &str) -> Result<Command, ScriptLoaderError> {
         let path = Path::new(path);
         let mut includes: Vec<ScriptMetadata> = Vec::new();
 
+        let content = match fs::read_to_string(path) {
+            core::result::Result::Ok(content) => content,
+            core::result::Result::Err(_) => return Err(ScriptLoaderError::CircularDependency),
+        };
+
         let mut meta = ScriptMetadata {
+            parent_token: None,
             path: path.to_path_buf(),
             token: self.get_path_hash(path),
-            content: fs::read_to_string(path)?,
+            content,
         };
 
         self.resolve_dependencies(&mut meta, &mut includes)?;
@@ -70,7 +85,7 @@ impl ScriptLoader {
         }
 
         Ok(Command {
-            name: ScriptName::new(".lua")?,
+            name: ScriptName::new(".lua").unwrap(),
             lua: meta.content,
         })
     }
@@ -92,7 +107,7 @@ impl ScriptLoader {
         &self,
         script_meta: &mut ScriptMetadata,
         includes: &mut Vec<ScriptMetadata>,
-    ) -> Result<()> {
+    ) -> Result<(), ScriptLoaderError> {
         let script_dir = script_meta.path.parent().unwrap();
 
         while let Some(cap) = RE.captures(&script_meta.content.clone()) {
@@ -103,9 +118,22 @@ impl ScriptLoader {
             } else {
                 script_dir.join(format!("{}.lua", include))
             };
-            let mut include_meta = ScriptMetadata {
-                token: self.get_path_hash(&include_path),
-                content: fs::read_to_string(&include_path)?,
+
+            let token = self.get_path_hash(&include_path);
+
+            if let Some(parent_token) = &script_meta.parent_token {
+                if *parent_token == token {
+                    return Err(ScriptLoaderError::CircularDependency);
+                }
+            }
+
+            let mut include_meta: ScriptMetadata = ScriptMetadata {
+                parent_token: Some(script_meta.token.clone()),
+                token,
+                content: match fs::read_to_string(&include_path) {
+                    Ok(content) => content,
+                    Err(err) => return Err(ScriptLoaderError::IoError(err.to_string())),
+                },
                 path: include_path,
             };
 
@@ -184,5 +212,15 @@ mod tests {
         ];
 
         assert_eq!(includes, expected);
+    }
+
+    #[test]
+    fn detect_circular_dependencies() {
+        let loader = ScriptLoader::new();
+        let fixture = "./tests/fixtures/scripts/fixture_circular_dependency.lua";
+        let script = loader.load_command(fixture);
+
+        assert!(script.is_err());
+        assert_eq!(script.err().unwrap(), ScriptLoaderError::CircularDependency);
     }
 }
