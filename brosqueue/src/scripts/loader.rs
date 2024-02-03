@@ -53,11 +53,11 @@ impl PartialEq for ScriptMetadata {
     }
 }
 
-pub struct ScriptLoader(HashMap<ScriptName, String>);
+pub struct ScriptLoader;
 
 impl ScriptLoader {
     pub fn new() -> Self {
-        Self(HashMap::new())
+        Self
     }
 
     fn load_command(&self, path: &str) -> Result<Command, ScriptLoaderError> {
