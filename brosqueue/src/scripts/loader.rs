@@ -1,6 +1,7 @@
 use anyhow::{Error, Result};
 use lazy_static::lazy_static;
 use regex::Regex;
+use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::{
@@ -30,6 +31,7 @@ impl ScriptName {
 #[derive(Debug, PartialEq)]
 enum ScriptLoaderError {
     CircularDependency,
+    DuplicateIncludes(String),
     IoError(String),
 }
 
@@ -45,6 +47,7 @@ struct ScriptMetadata {
     path: PathBuf,
     token: String,
     content: String,
+    includes: HashSet<String>,
 }
 
 impl PartialEq for ScriptMetadata {
@@ -74,6 +77,7 @@ impl ScriptLoader {
             path: path.to_path_buf(),
             token: self.get_path_hash(path),
             content,
+            includes: HashSet::new(),
         };
 
         self.resolve_dependencies(&mut meta, &mut includes)?;
@@ -110,8 +114,14 @@ impl ScriptLoader {
     ) -> Result<(), ScriptLoaderError> {
         let script_dir = script_meta.path.parent().unwrap();
 
-        while let Some(cap) = RE.captures(&script_meta.content.clone()) {
+        for cap in RE.captures_iter(&script_meta.content.clone()) {
             let (line, [include]) = cap.extract();
+
+            if script_meta.includes.contains(include) {
+                return Err(ScriptLoaderError::DuplicateIncludes(include.to_string()));
+            }
+
+            script_meta.includes.insert(include.to_string());
 
             let include_path = if include.ends_with(".lua") {
                 script_dir.join(include)
@@ -135,6 +145,7 @@ impl ScriptLoader {
                     Err(err) => return Err(ScriptLoaderError::IoError(err.to_string())),
                 },
                 path: include_path,
+                includes: HashSet::new(),
             };
 
             self.resolve_dependencies(&mut include_meta, includes)?;
@@ -222,5 +233,18 @@ mod tests {
 
         assert!(script.is_err());
         assert_eq!(script.err().unwrap(), ScriptLoaderError::CircularDependency);
+    }
+
+    #[test]
+    fn prevent_multiple_includes_of_file_in_single_script() {
+        let loader = ScriptLoader::new();
+        let fixture = "./tests/fixtures/scripts/fixture_duplicate_include.lua";
+        let script = loader.load_command(fixture);
+
+        assert!(script.is_err());
+        assert_eq!(
+            script.err().unwrap(),
+            ScriptLoaderError::DuplicateIncludes("includes/utils".to_string())
+        );
     }
 }
