@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.79"
 redis = { version = "0.24.0", features = ["streams", "tokio", "tokio-comp", "connection-manager"] }
-brosqueue-macros = { path = "../brosqueue-macros" }
+hornet-macros = { path = "../hornet-macros" }
 tokio = { version = "1.33.*", features = ["full"] }
 serde = { version = "1.0.196", features = ["derive"] }
 serde_json = "1.0.113"
