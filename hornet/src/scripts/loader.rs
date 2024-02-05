@@ -87,8 +87,6 @@ fn load_script_content(path: &str) -> Result<String, ScriptLoaderError> {
         meta.content = meta.content.replace(&include.token, "");
     }
 
-    let script_name = path.file_name().unwrap().to_str().unwrap();
-
     Ok(meta.content)
 }
 

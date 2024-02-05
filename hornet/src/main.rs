@@ -1,6 +1,6 @@
-use redis::Commands;
+
 use serde::{Deserialize, Serialize};
-use std::{env::current_dir, fs, path::Path};
+
 use worker::Worker;
 
 mod scripts;

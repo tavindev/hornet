@@ -3,14 +3,10 @@ use crate::scripts::{
     Script,
 };
 use lazy_static::lazy_static;
-use redis::{Client, Commands, Connection, FromRedisValue};
-use serde::{de::DeserializeOwned, Deserialize};
-use std::{
-    collections::HashMap,
-    sync::{atomic::AtomicU32, Arc, Mutex},
-    vec,
-};
-use tokio::{sync::Notify, task::JoinHandle};
+use redis::{Client, Commands};
+use serde::{de::DeserializeOwned};
+
+
 
 lazy_static! {
     static ref MOVE_TO_ACTIVE: MoveToActive = MoveToActive::new();
@@ -57,7 +53,7 @@ impl TaskRunner {
                     }
                     MoveToActiveJobReturn::Job(job) => match serde_json::from_str(&job.data) {
                         Ok(data) => {
-                            let result = process_fn(data);
+                            let _result = process_fn(data);
                         }
                         Err(err) => {
                             println!("Error deserializing job data: {:?}", err);

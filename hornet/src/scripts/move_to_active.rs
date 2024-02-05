@@ -1,12 +1,12 @@
 use std::time::SystemTime;
 
 use super::{
-    loader::{load_redis_script, Command, ScriptLoaderError},
+    loader::{load_redis_script},
     Script,
 };
 use anyhow::Result;
 use redis::{FromRedisValue, ToRedisArgs};
-use rmp::decode;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug)]
