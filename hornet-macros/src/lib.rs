@@ -1,10 +1,13 @@
 extern crate proc_macro;
 
 use proc_macro::TokenStream;
-use quote::quote;
+use quote::{quote, ToTokens};
 use syn::{
     parse::{Parse, ParseStream},
-    parse_macro_input, Attribute, ItemFn,
+    parse_macro_input,
+    punctuated::Punctuated,
+    token::Comma,
+    Attribute, FnArg, ItemFn,
 };
 
 #[derive(Debug)]
@@ -84,10 +87,26 @@ impl Parse for WorkerOpts {
 }
 
 #[proc_macro_attribute]
-pub fn worker(args: TokenStream, item: TokenStream) -> TokenStream {
+pub fn worker(args: TokenStream, input: TokenStream) -> TokenStream {
     let args = parse_macro_input!(args as WorkerOpts);
 
-    println!("args: {:?}", args);
+    let item = parse_macro_input!(input as ItemFn);
+    let function_name = &item.sig.ident;
+    let fn_body = &item.block;
+    let params = &item.sig.inputs;
 
-    item
+    let expanded = quote! {
+        mod #function_name {
+            pub fn add() {
+                println!("Hello, world!");
+            }
+
+            // Receives function arguments
+            pub fn process() {
+                #fn_body
+            }
+        }
+    };
+
+    TokenStream::from(expanded)
 }

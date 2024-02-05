@@ -1,4 +1,8 @@
-use crate::scripts::{add_standard_job::AddStandardJob, loader::ScriptLoader, Script};
+use crate::scripts::{
+    loader::ScriptLoader,
+    move_to_active::{MoveToActive, MoveToActiveJobArgs, MoveToActiveJobReturn},
+    Script,
+};
 use lazy_static::lazy_static;
 use redis::{Client, Commands, Connection, FromRedisValue};
 use serde::{de::DeserializeOwned, Deserialize};
@@ -9,34 +13,48 @@ use std::{
 };
 use tokio::{sync::Notify, task::JoinHandle};
 
+lazy_static! {
+    static ref MOVE_TO_ACTIVE: MoveToActive = MoveToActive::new();
+}
+
 enum TaskRunnerEvent {
     Freed,
 }
 
 struct TaskRunner {
+    prefix: String,
     client: Client,
     sender: tokio::sync::mpsc::Sender<TaskRunnerEvent>,
 }
 
 impl TaskRunner {
-    fn new(client: Client, sender: tokio::sync::mpsc::Sender<TaskRunnerEvent>) -> Self {
-        TaskRunner { client, sender }
+    fn new(
+        prefix: String,
+        client: Client,
+        sender: tokio::sync::mpsc::Sender<TaskRunnerEvent>,
+    ) -> Self {
+        TaskRunner {
+            prefix,
+            client,
+            sender,
+        }
     }
 
     fn run<Data: DeserializeOwned + 'static>(mut self, process_fn: fn(Data) -> String) {
         let _ = tokio::spawn(async move {
             // Move to active script
-            while let Ok(job) = self.client.get::<&str, String>("key") {
-                match serde_json::from_str(&job) {
-                    Ok(data) => {
-                        // ProcessJob
-                        process_fn(data);
-
-                        let _ = self.client.del::<&str, String>("key");
-                    }
-
-                    Err(e) => {
-                        println!("Error: {:?}", e);
+            while let Ok(job) = MOVE_TO_ACTIVE.run(
+                &self.prefix,
+                &mut self.client,
+                MoveToActiveJobArgs {
+                    token: "0".to_string(),
+                    lock_duration: 10_000,
+                },
+            ) {
+                match job {
+                    MoveToActiveJobReturn::None => {
+                        // No job to process
+                        break;
                     }
                 }
             }
@@ -97,7 +115,11 @@ where
             if let Ok(_) = connection
                 .bzpopmin::<String, (String, String, f64)>(self.get_prefixed_key("marker"), 10000.)
             {
-                let task_runner = TaskRunner::new(self.client.clone(), self.sender.clone());
+                let task_runner = TaskRunner::new(
+                    self.get_prefixed_key(""),
+                    self.client.clone(),
+                    self.sender.clone(),
+                );
                 self.active_tasks += 1;
                 task_runner.run(self.process_fn);
             }

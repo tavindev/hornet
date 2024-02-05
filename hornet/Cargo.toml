@@ -1,5 +1,5 @@
 [package]
-name = "brosqueue"
+name = "hornet"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.79"
-redis = "0.24.0"
+redis = { version = "0.24.0", features = ["streams", "tokio", "tokio-comp", "connection-manager"] }
 brosqueue-macros = { path = "../brosqueue-macros" }
 tokio = { version = "1.33.*", features = ["full"] }
 serde = { version = "1.0.196", features = ["derive"] }
@@ -18,3 +18,4 @@ quote = "1.0.35"
 regex = "1.10.3"
 lazy_static = "1.4.0"
 glob = "0.3.1"
+rmp-serde = "1.1.2"

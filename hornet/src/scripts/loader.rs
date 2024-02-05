@@ -1,17 +1,13 @@
-use anyhow::{Error, Result};
+use anyhow::Result;
 use lazy_static::lazy_static;
 use regex::Regex;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
-use std::{
-    collections::{hash_map::DefaultHasher, HashMap},
-    fs,
-    path::Path,
-};
+use std::{collections::hash_map::DefaultHasher, fs, path::Path};
 
 lazy_static! {
-    static ref RE: Regex =
+    static ref INCLUDE_REGEX: Regex =
         Regex::new(r#"(?m)^[-]{2,3}[ \t]*@include[ \t]["']+([^; \t\n]*)["'];?[ \t]?"#).unwrap();
 }
 
@@ -19,9 +15,12 @@ lazy_static! {
 struct ScriptName(String);
 
 impl ScriptName {
-    fn new(name: &str) -> Result<Self> {
+    fn new(name: &str) -> Result<Self, ScriptLoaderError> {
         if !name.ends_with(".lua") {
-            return Err(Error::msg("Script name must end with .lua"));
+            return Err(ScriptLoaderError::IoError(format!(
+                "Script name must end with .lua, got {}",
+                name
+            )));
         }
 
         Ok(Self(name.to_string()))
@@ -29,7 +28,7 @@ impl ScriptName {
 }
 
 #[derive(Debug, PartialEq)]
-enum ScriptLoaderError {
+pub enum ScriptLoaderError {
     CircularDependency,
     DuplicateIncludes(String),
     IoError(String),
@@ -38,7 +37,7 @@ enum ScriptLoaderError {
 #[derive(Debug)]
 pub struct Command {
     name: ScriptName,
-    lua: String,
+    pub lua: String,
 }
 
 #[derive(Debug, Clone)]
@@ -63,13 +62,22 @@ impl ScriptLoader {
         Self
     }
 
-    fn load_command(&self, path: &str) -> Result<Command, ScriptLoaderError> {
+    pub fn load_script(path: &str) -> Result<redis::Script, ScriptLoaderError> {
+        let loader = ScriptLoader::new();
+        let command = loader.load_command(path)?;
+
+        Ok(redis::Script::new(command.lua.as_str()))
+    }
+
+    pub fn load_command(&self, path: &str) -> Result<Command, ScriptLoaderError> {
         let path = Path::new(path);
         let mut includes: Vec<ScriptMetadata> = Vec::new();
 
         let content = match fs::read_to_string(path) {
             core::result::Result::Ok(content) => content,
-            core::result::Result::Err(_) => return Err(ScriptLoaderError::CircularDependency),
+            core::result::Result::Err(err) => {
+                return Err(ScriptLoaderError::IoError(err.to_string()))
+            }
         };
 
         let mut meta = ScriptMetadata {
@@ -86,10 +94,13 @@ impl ScriptLoader {
             meta.content = meta
                 .content
                 .replacen(&include.token, include.content.as_str(), 1);
+            meta.content = meta.content.replace(&include.token, "");
         }
 
+        let script_name = path.file_name().unwrap().to_str().unwrap();
+
         Ok(Command {
-            name: ScriptName::new(".lua").unwrap(),
+            name: ScriptName::new(script_name)?,
             lua: meta.content,
         })
     }
@@ -114,7 +125,7 @@ impl ScriptLoader {
     ) -> Result<(), ScriptLoaderError> {
         let script_dir = script_meta.path.parent().unwrap();
 
-        for cap in RE.captures_iter(&script_meta.content.clone()) {
+        for cap in INCLUDE_REGEX.captures_iter(&script_meta.content.clone()) {
             let (line, [include]) = cap.extract();
 
             if script_meta.includes.contains(include) {
