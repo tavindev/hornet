@@ -1,7 +1,7 @@
 use std::time::SystemTime;
 
 use super::{
-    loader::{Command, ScriptLoader, ScriptLoaderError},
+    loader::{load_redis_script, Command, ScriptLoaderError},
     Script,
 };
 use anyhow::Result;
@@ -14,7 +14,7 @@ pub struct MoveToActive(pub redis::Script);
 
 impl MoveToActive {
     pub fn new() -> Self {
-        let script = ScriptLoader::load_script("./src/scripts/commands/moveToActive-11.lua");
+        let script = load_redis_script("./src/scripts/commands/moveToActive-11.lua");
 
         match script {
             Ok(script) => MoveToActive(script),

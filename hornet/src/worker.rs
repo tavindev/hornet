@@ -1,5 +1,4 @@
 use crate::scripts::{
-    loader::ScriptLoader,
     move_to_active::{MoveToActive, MoveToActiveJobArgs, MoveToActiveJobReturn},
     Script,
 };
@@ -56,6 +55,14 @@ impl TaskRunner {
                         // No job to process
                         break;
                     }
+                    MoveToActiveJobReturn::Job(job) => match serde_json::from_str(&job.data) {
+                        Ok(data) => {
+                            let result = process_fn(data);
+                        }
+                        Err(err) => {
+                            println!("Error deserializing job data: {:?}", err);
+                        }
+                    },
                 }
             }
 

@@ -1,8 +1,8 @@
 use anyhow::Result;
 
+pub(crate) mod add_standard_job;
+pub(crate) mod loader;
 pub(crate) mod move_to_active;
-
-pub mod loader;
 
 pub trait Script<ScriptArgs, ScriptReturn> {
     fn run(
