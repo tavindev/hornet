@@ -1,7 +1,7 @@
 
 [workspace]
 members = [
-    "brosqueue",
-		"brosqueue-macros"
+    "hornet",
+		"hornet-macros"
 ]
 
