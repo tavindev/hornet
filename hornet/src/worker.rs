@@ -6,9 +6,29 @@ use anyhow::Result;
 use lazy_static::lazy_static;
 use redis::{Client, Commands};
 use serde::de::DeserializeOwned;
+use uuid::Uuid;
 
 lazy_static! {
     static ref MOVE_TO_ACTIVE: MoveToActive = MoveToActive::new();
+}
+
+struct WorkerToken {
+    token: String,
+    postfix: u64,
+}
+
+impl WorkerToken {
+    fn new() -> Self {
+        WorkerToken {
+            token: Uuid::new_v4().to_string(),
+            postfix: 0,
+        }
+    }
+
+    fn next(&mut self) -> String {
+        self.postfix += 1;
+        format!("{}-{}", self.token, self.postfix)
+    }
 }
 
 pub struct Worker<Data: DeserializeOwned + 'static> {
@@ -19,6 +39,7 @@ pub struct Worker<Data: DeserializeOwned + 'static> {
     receiver: tokio::sync::mpsc::Receiver<TaskRunnerEvent>,
     sender: tokio::sync::mpsc::Sender<TaskRunnerEvent>,
     process_fn: fn(Job<Data>) -> Result<String>,
+    token: WorkerToken,
 }
 
 impl<Data> Worker<Data>
@@ -42,6 +63,7 @@ where
             receiver,
             sender,
             process_fn,
+            token: WorkerToken::new(),
         }
     }
 
@@ -116,7 +138,14 @@ impl TaskRunner {
             ) {
                 match job {
                     MoveToActiveReturn::Job(job) => {
-                        let _result = process_fn(job);
+                        match process_fn(job) {
+                            Ok(_) => {
+                                // Move job to completed
+                            }
+                            Err(_) => {
+                                // Move job to failed
+                            }
+                        }
                     }
                     MoveToActiveReturn::None => {
                         // No job to process
