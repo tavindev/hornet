@@ -14,7 +14,7 @@ impl MoveToActive {
         &self,
         prefix: &str,
         mut client: &mut redis::Client,
-        args: MoveToActiveArgs,
+        opts: MoveToActiveArgs,
     ) -> Result<MoveToActiveReturn<JobData>> {
         let mut script = &mut self.0.prepare_invoke();
 
@@ -48,7 +48,7 @@ impl MoveToActive {
         let res = script
             .arg(prefix)
             .arg(timestamp)
-            .arg(args)
+            .arg(opts)
             .invoke::<MoveToActiveReturn<JobData>>(&mut client)?;
 
         Ok(res)
