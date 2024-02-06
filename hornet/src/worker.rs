@@ -115,12 +115,12 @@ impl TaskRunner {
                 },
             ) {
                 match job {
+                    MoveToActiveReturn::Job(job) => {
+                        let _result = process_fn(job);
+                    }
                     MoveToActiveReturn::None => {
                         // No job to process
                         break;
-                    }
-                    MoveToActiveReturn::Job(job) => {
-                        let _result = process_fn(job);
                     }
                 }
             }
