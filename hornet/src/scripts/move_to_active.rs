@@ -145,6 +145,8 @@ impl<JobData: DeserializeOwned> FromRedisValue for MoveToActiveReturn<JobData> {
 mod tests {
     use std::time::SystemTime;
 
+    use crate::queue_keys::QueueKeys;
+
     use super::*;
 
     #[test]
@@ -161,17 +163,17 @@ mod tests {
             .to_string();
 
         let keys = vec![
-            "wait",
-            "active",
-            "prioritized",
-            "events",
-            "stalled",
-            "limiter",
-            "delayed",
-            "paused",
-            "meta",
-            "pc",
-            "marker",
+            QueueKeys::Wait,
+            QueueKeys::Active,
+            QueueKeys::Prioritized,
+            QueueKeys::Events,
+            QueueKeys::Stalled,
+            QueueKeys::Limiter,
+            QueueKeys::Delayed,
+            QueueKeys::Paused,
+            QueueKeys::Meta,
+            QueueKeys::Pc,
+            QueueKeys::Marker,
         ]
         .iter()
         .map(|s| format!("{}{}", prefix, s))

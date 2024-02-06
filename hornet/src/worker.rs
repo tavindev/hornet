@@ -1,6 +1,12 @@
 use crate::{
     job::Job,
-    scripts::move_to_active::{MoveToActive, MoveToActiveArgs, MoveToActiveReturn},
+    scripts::{
+        move_to_active::{MoveToActive, MoveToActiveArgs, MoveToActiveReturn},
+        move_to_finished::{
+            KeepJobs, MoveToFinished, MoveToFinishedArgs, MoveToFinishedReturn,
+            MoveToFinishedTarget,
+        },
+    },
 };
 use anyhow::Result;
 use lazy_static::lazy_static;
@@ -10,6 +16,7 @@ use uuid::Uuid;
 
 lazy_static! {
     static ref MOVE_TO_ACTIVE: MoveToActive = MoveToActive::new();
+    static ref MOVE_TO_FINISHED: MoveToFinished = MoveToFinished::new();
 }
 
 struct WorkerToken {
@@ -27,7 +34,7 @@ impl WorkerToken {
 
     fn next(&mut self) -> String {
         self.postfix += 1;
-        format!("{}-{}", self.token, self.postfix)
+        format!("{}:{}", self.token, self.postfix)
     }
 }
 
@@ -85,6 +92,7 @@ where
             {
                 let task_runner = TaskRunner::new(
                     self.get_prefixed_key(""),
+                    self.token.next(),
                     self.client.clone(),
                     self.sender.clone(),
                 );
@@ -105,6 +113,7 @@ enum TaskRunnerEvent {
 
 struct TaskRunner {
     prefix: String,
+    token: String,
     client: Client,
     sender: tokio::sync::mpsc::Sender<TaskRunnerEvent>,
 }
@@ -112,11 +121,13 @@ struct TaskRunner {
 impl TaskRunner {
     fn new(
         prefix: String,
+        token: String,
         client: Client,
         sender: tokio::sync::mpsc::Sender<TaskRunnerEvent>,
     ) -> Self {
         TaskRunner {
             prefix,
+            token,
             client,
             sender,
         }
@@ -132,18 +143,44 @@ impl TaskRunner {
                 &self.prefix,
                 &mut self.client,
                 MoveToActiveArgs {
-                    token: "0".to_string(),
+                    token: self.token.clone(),
                     lock_duration: 10_000,
                 },
             ) {
                 match job {
                     MoveToActiveReturn::Job(job) => {
+                        let job_id = job.id.clone();
+
                         match process_fn(job) {
                             Ok(_) => {
                                 // Move job to completed
                             }
-                            Err(_) => {
+                            Err(err) => {
                                 // Move job to failed
+                                match MOVE_TO_FINISHED
+                                    .run(
+                                        &self.prefix,
+                                        &mut self.client,
+                                        &job_id,
+                                        err.to_string().as_str(),
+                                        MoveToFinishedTarget::Failed,
+                                        MoveToFinishedArgs {
+                                            token: self.token.clone(),
+                                            keep_jobs: KeepJobs { count: -1 },
+                                            lock_duration: 10_000,
+                                            max_attempts: 1,
+                                            max_metrics_size: 100,
+                                            fpof: false,
+                                            rdof: false,
+                                        },
+                                    )
+                                    .unwrap()
+                                {
+                                    MoveToFinishedReturn::Ok => {}
+                                    res => {
+                                        println!("Error moving job to failed: {:?}", res);
+                                    }
+                                }
                             }
                         }
                     }
