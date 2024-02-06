@@ -1,10 +1,6 @@
-
+use anyhow::Result;
+use hornet::{job::Job, worker::Worker};
 use serde::{Deserialize, Serialize};
-
-use worker::Worker;
-
-mod scripts;
-mod worker;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ProcessorData {
@@ -12,10 +8,10 @@ struct ProcessorData {
     age: u8,
 }
 
-fn test_processor(data: ProcessorData) -> String {
+fn test_processor(data: Job<ProcessorData>) -> Result<String> {
     println!("Processing: {:?}", data);
 
-    "Done".to_string()
+    Ok("Done".to_string())
 }
 
 #[tokio::main]

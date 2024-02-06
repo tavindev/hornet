@@ -34,12 +34,6 @@ pub enum ScriptLoaderError {
     IoError(String),
 }
 
-#[derive(Debug)]
-pub struct Command {
-    name: ScriptName,
-    pub lua: String,
-}
-
 #[derive(Debug, Clone)]
 struct ScriptMetadata {
     parent_token: Option<String>,

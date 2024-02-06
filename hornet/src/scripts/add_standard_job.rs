@@ -1,14 +1,6 @@
-use super::loader::load_redis_script;
+use crate::generate_script_struct;
 
-pub struct AddStandardJob(pub redis::Script);
-
-impl AddStandardJob {
-    pub fn new() -> Self {
-        let script = load_redis_script("./src/scripts/commands/addStandardJob-7.lua");
-
-        match script {
-            Ok(script) => AddStandardJob(script),
-            Err(e) => panic!("Error: {:?}", e),
-        }
-    }
-}
+generate_script_struct!(
+    AddStandardJob,
+    "./src/scripts/commands/addStandardJob-11.lua"
+);

@@ -1,36 +1,68 @@
 use std::time::SystemTime;
 
-use super::{
-    loader::{load_redis_script},
-    Script,
-};
+use crate::{generate_script_struct, job::Job};
+
 use anyhow::Result;
 use redis::{FromRedisValue, ToRedisArgs};
 
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-#[derive(Debug)]
-pub struct MoveToActive(pub redis::Script);
+generate_script_struct!(MoveToActive, "./src/scripts/commands/moveToActive-11.lua");
 
 impl MoveToActive {
-    pub fn new() -> Self {
-        let script = load_redis_script("./src/scripts/commands/moveToActive-11.lua");
+    pub fn run<JobData: DeserializeOwned>(
+        &self,
+        prefix: &str,
+        mut client: &mut redis::Client,
+        args: MoveToActiveArgs,
+    ) -> Result<MoveToActiveReturn<JobData>> {
+        let mut script = &mut self.0.prepare_invoke();
 
-        match script {
-            Ok(script) => MoveToActive(script),
-            Err(e) => panic!("Error: {:?}", e),
+        let timestamp = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+            .to_string();
+
+        let keys = vec![
+            "wait",
+            "active",
+            "prioritized",
+            "events",
+            "stalled",
+            "limiter",
+            "delayed",
+            "paused",
+            "meta",
+            "pc",
+            "marker",
+        ]
+        .iter()
+        .map(|s| format!("{}{}", prefix, s))
+        .collect::<Vec<String>>();
+
+        for key in keys {
+            script = script.key(key)
         }
+
+        let res = script
+            .arg(prefix)
+            .arg(timestamp)
+            .arg(args)
+            .invoke::<MoveToActiveReturn<JobData>>(&mut client)?;
+
+        Ok(res)
     }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct MoveToActiveJobArgs {
+pub struct MoveToActiveArgs {
     pub token: String,
     #[serde(rename = "lockDuration")]
     pub lock_duration: u32,
 }
 
-impl ToRedisArgs for MoveToActiveJobArgs {
+impl ToRedisArgs for MoveToActiveArgs {
     fn write_redis_args<W>(&self, out: &mut W)
     where
         W: ?Sized + redis::RedisWrite,
@@ -42,32 +74,19 @@ impl ToRedisArgs for MoveToActiveJobArgs {
 }
 
 #[derive(Debug)]
-pub(crate) struct Job {
-    pub id: String,
-    pub name: String,
-    pub data: String,
-    pub opts: String,
-    pub timestamp: u128,
-    pub delay: u128,
-    pub priority: u32,
-    pub processed_on: u128,
-    pub ats: u32,
-}
-
-#[derive(Debug)]
-pub enum MoveToActiveJobReturn {
-    Job(Job),
+pub enum MoveToActiveReturn<JobData> {
+    Job(Job<JobData>),
     None,
 }
 
-impl FromRedisValue for MoveToActiveJobReturn {
+impl<JobData: DeserializeOwned> FromRedisValue for MoveToActiveReturn<JobData> {
     fn from_redis_value(v: &redis::Value) -> redis::RedisResult<Self> {
         use redis::Value;
 
         match *v {
             Value::Bulk(ref items) => match items.as_slice() {
                 [Value::Int(0), Value::Int(0), Value::Int(0), Value::Int(0)] => {
-                    return Ok(MoveToActiveJobReturn::None)
+                    return Ok(MoveToActiveReturn::None)
                 }
                 [Value::Bulk(raw_job), Value::Data(job_id), Value::Int(_), Value::Int(_)] => {
                     let raw_job = match raw_job.as_slice() {
@@ -75,7 +94,7 @@ impl FromRedisValue for MoveToActiveJobReturn {
                             Ok(Job {
                                 id: String::from_utf8(job_id.to_vec()).unwrap(),
                                 name: String::from_utf8(name.to_vec()).unwrap(),
-                                data: String::from_utf8(data.to_vec()).unwrap(),
+                                data: serde_json::from_slice(data).unwrap(),
                                 opts: String::from_utf8(opts.to_vec()).unwrap(),
                                 timestamp: String::from_utf8(timestamp.to_vec())
                                     .unwrap()
@@ -105,7 +124,7 @@ impl FromRedisValue for MoveToActiveJobReturn {
                         ))),
                     }?;
 
-                    Ok(MoveToActiveJobReturn::Job(raw_job))
+                    Ok(MoveToActiveReturn::Job(raw_job))
                 }
                 _ => {
                     return Err(redis::RedisError::from((
@@ -122,13 +141,25 @@ impl FromRedisValue for MoveToActiveJobReturn {
     }
 }
 
-impl Script<MoveToActiveJobArgs, MoveToActiveJobReturn> for MoveToActive {
-    fn run(
-        &self,
-        prefix: &str,
-        redis: &mut redis::Client,
-        args: MoveToActiveJobArgs,
-    ) -> Result<MoveToActiveJobReturn> {
+#[cfg(test)]
+mod tests {
+    use std::time::SystemTime;
+
+    use super::*;
+
+    #[test]
+    fn loads() {
+        let script = MoveToActive::new();
+        let mut script = &mut script.0.prepare_invoke();
+        let mut redis = redis::Client::open("redis://localhost:6379").unwrap();
+        let prefix = "bull:my_queue:";
+
+        let timestamp = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+            .to_string();
+
         let keys = vec![
             "wait",
             "active",
@@ -141,53 +172,29 @@ impl Script<MoveToActiveJobArgs, MoveToActiveJobReturn> for MoveToActive {
             "meta",
             "pc",
             "marker",
-        ];
-        let timestamp = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_millis();
-
-        let mut script = &mut self.0.prepare_invoke();
+        ]
+        .iter()
+        .map(|s| format!("{}{}", prefix, s))
+        .collect::<Vec<String>>();
 
         for key in keys {
-            let key = format!("{}{}", prefix, key);
-            script = script.key(key);
+            script = script.key(key)
         }
 
         let res = script
             .arg(prefix)
-            .arg(timestamp.to_string())
-            .arg(args)
-            .invoke::<MoveToActiveJobReturn>(redis);
-
-        Ok(res?)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn loads() {
-        let script = MoveToActive::new();
-
-        let mut redis = redis::Client::open("redis://localhost:6379").unwrap();
-
-        let res = script.run(
-            "my_queue",
-            &mut redis,
-            MoveToActiveJobArgs {
+            .arg(timestamp)
+            .arg(MoveToActiveArgs {
                 token: "test".to_string(),
                 lock_duration: 10_000,
-            },
-        );
+            })
+            .invoke(&mut redis);
 
         dbg!(&res);
 
         assert!(res.is_ok());
 
-        let res = res.unwrap();
+        let res: MoveToActiveReturn<String> = res.unwrap();
 
         dbg!(res);
     }

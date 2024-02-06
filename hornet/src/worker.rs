@@ -1,71 +1,14 @@
-use crate::scripts::{
-    move_to_active::{MoveToActive, MoveToActiveJobArgs, MoveToActiveJobReturn},
-    Script,
+use crate::{
+    job::Job,
+    scripts::move_to_active::{MoveToActive, MoveToActiveArgs, MoveToActiveReturn},
 };
+use anyhow::Result;
 use lazy_static::lazy_static;
 use redis::{Client, Commands};
-use serde::{de::DeserializeOwned};
-
-
+use serde::de::DeserializeOwned;
 
 lazy_static! {
     static ref MOVE_TO_ACTIVE: MoveToActive = MoveToActive::new();
-}
-
-enum TaskRunnerEvent {
-    Freed,
-}
-
-struct TaskRunner {
-    prefix: String,
-    client: Client,
-    sender: tokio::sync::mpsc::Sender<TaskRunnerEvent>,
-}
-
-impl TaskRunner {
-    fn new(
-        prefix: String,
-        client: Client,
-        sender: tokio::sync::mpsc::Sender<TaskRunnerEvent>,
-    ) -> Self {
-        TaskRunner {
-            prefix,
-            client,
-            sender,
-        }
-    }
-
-    fn run<Data: DeserializeOwned + 'static>(mut self, process_fn: fn(Data) -> String) {
-        let _ = tokio::spawn(async move {
-            // Move to active script
-            while let Ok(job) = MOVE_TO_ACTIVE.run(
-                &self.prefix,
-                &mut self.client,
-                MoveToActiveJobArgs {
-                    token: "0".to_string(),
-                    lock_duration: 10_000,
-                },
-            ) {
-                match job {
-                    MoveToActiveJobReturn::None => {
-                        // No job to process
-                        break;
-                    }
-                    MoveToActiveJobReturn::Job(job) => match serde_json::from_str(&job.data) {
-                        Ok(data) => {
-                            let _result = process_fn(data);
-                        }
-                        Err(err) => {
-                            println!("Error deserializing job data: {:?}", err);
-                        }
-                    },
-                }
-            }
-
-            // Emits a signal to the worker that it's done processing jobs
-            let _ = self.sender.send(TaskRunnerEvent::Freed).await;
-        });
-    }
 }
 
 pub struct Worker<Data: DeserializeOwned + 'static> {
@@ -75,7 +18,7 @@ pub struct Worker<Data: DeserializeOwned + 'static> {
     client: Client,
     receiver: tokio::sync::mpsc::Receiver<TaskRunnerEvent>,
     sender: tokio::sync::mpsc::Sender<TaskRunnerEvent>,
-    process_fn: fn(Data) -> String,
+    process_fn: fn(Job<Data>) -> Result<String>,
 }
 
 impl<Data> Worker<Data>
@@ -86,7 +29,7 @@ where
         queue_name: String,
         redis_url: String,
         concurrency: usize,
-        process_fn: fn(Data) -> String,
+        process_fn: fn(Job<Data>) -> Result<String>,
     ) -> Self {
         let client = Client::open(redis_url).unwrap();
         let (sender, receiver) = tokio::sync::mpsc::channel(concurrency);
@@ -131,6 +74,60 @@ where
 
     fn get_prefixed_key(&self, key: &str) -> String {
         format!("bull:{}:{}", self.queue_name, key)
+    }
+}
+
+enum TaskRunnerEvent {
+    Freed,
+}
+
+struct TaskRunner {
+    prefix: String,
+    client: Client,
+    sender: tokio::sync::mpsc::Sender<TaskRunnerEvent>,
+}
+
+impl TaskRunner {
+    fn new(
+        prefix: String,
+        client: Client,
+        sender: tokio::sync::mpsc::Sender<TaskRunnerEvent>,
+    ) -> Self {
+        TaskRunner {
+            prefix,
+            client,
+            sender,
+        }
+    }
+
+    fn run<Data: DeserializeOwned + 'static>(
+        mut self,
+        process_fn: fn(Job<Data>) -> Result<String>,
+    ) {
+        let _ = tokio::spawn(async move {
+            // Move to active script
+            while let Ok(job) = MOVE_TO_ACTIVE.run::<Data>(
+                &self.prefix,
+                &mut self.client,
+                MoveToActiveArgs {
+                    token: "0".to_string(),
+                    lock_duration: 10_000,
+                },
+            ) {
+                match job {
+                    MoveToActiveReturn::None => {
+                        // No job to process
+                        break;
+                    }
+                    MoveToActiveReturn::Job(job) => {
+                        let _result = process_fn(job);
+                    }
+                }
+            }
+
+            // Emits a signal to the worker that it's done processing jobs
+            let _ = self.sender.send(TaskRunnerEvent::Freed).await;
+        });
     }
 }
 
