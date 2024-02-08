@@ -41,8 +41,10 @@ pub struct MoveToFinishedArgs {
     pub max_attempts: u64,
     #[serde(rename = "maxMetricsSize")]
     pub max_metrics_size: u64,
-    pub fpof: bool,
-    pub rdof: bool,
+    #[serde(rename = "fpof")]
+    pub fail_parent_on_fail: bool,
+    #[serde(rename = "rdof")]
+    pub remove_dependency_on_fail: bool,
 }
 
 #[derive(Debug)]

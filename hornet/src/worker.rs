@@ -170,8 +170,8 @@ impl TaskRunner {
                                             lock_duration: 10_000,
                                             max_attempts: 1,
                                             max_metrics_size: 100,
-                                            fpof: false,
-                                            rdof: false,
+                                            fail_parent_on_fail: false,
+                                            remove_dependency_on_fail: false,
                                         },
                                     )
                                     .unwrap()
