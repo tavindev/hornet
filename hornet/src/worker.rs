@@ -11,7 +11,7 @@ use crate::{
 use anyhow::Result;
 use lazy_static::lazy_static;
 use redis::{Client, Commands};
-use serde::de::DeserializeOwned;
+use serde::{de::DeserializeOwned, Serialize};
 use uuid::Uuid;
 
 lazy_static! {
@@ -133,10 +133,11 @@ impl TaskRunner {
         }
     }
 
-    fn run<Data: DeserializeOwned + 'static>(
-        mut self,
-        process_fn: fn(Job<Data>) -> Result<String>,
-    ) {
+    fn run<Data, ReturnType>(mut self, process_fn: fn(Job<Data>) -> Result<ReturnType>)
+    where
+        Data: DeserializeOwned + 'static,
+        ReturnType: Serialize + 'static,
+    {
         let _ = tokio::spawn(async move {
             // Move to active script
             while let Ok(job) = MOVE_TO_ACTIVE.run::<Data>(
@@ -152,8 +153,34 @@ impl TaskRunner {
                         let job_id = job.id.clone();
 
                         match process_fn(job) {
-                            Ok(_) => {
+                            Ok(result) => {
                                 // Move job to completed
+                                let stringified_result = serde_json::to_string(&result).unwrap();
+
+                                match MOVE_TO_FINISHED
+                                    .run(
+                                        &self.prefix,
+                                        &mut self.client,
+                                        &job_id,
+                                        stringified_result.as_str(),
+                                        MoveToFinishedTarget::Completed,
+                                        MoveToFinishedArgs {
+                                            token: self.token.clone(),
+                                            keep_jobs: KeepJobs { count: -1 },
+                                            lock_duration: 10_000,
+                                            max_attempts: 1,
+                                            max_metrics_size: 100,
+                                            fail_parent_on_fail: false,
+                                            remove_dependency_on_fail: false,
+                                        },
+                                    )
+                                    .unwrap()
+                                {
+                                    MoveToFinishedReturn::Ok => {}
+                                    res => {
+                                        println!("Error moving job to completed: {:?}", res);
+                                    }
+                                }
                             }
                             Err(err) => {
                                 // Move job to failed
