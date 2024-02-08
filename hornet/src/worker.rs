@@ -38,26 +38,31 @@ impl WorkerToken {
     }
 }
 
-pub struct Worker<Data: DeserializeOwned + 'static> {
+pub struct Worker<Data, Return>
+where
+    Data: DeserializeOwned + 'static,
+    Return: Serialize + 'static,
+{
     queue_name: String,
     concurrency: usize,
     active_tasks: usize,
     client: Client,
     receiver: tokio::sync::mpsc::Receiver<TaskRunnerEvent>,
     sender: tokio::sync::mpsc::Sender<TaskRunnerEvent>,
-    process_fn: fn(Job<Data>) -> Result<String>,
+    process_fn: fn(Job<Data>) -> Result<Return>,
     token: WorkerToken,
 }
 
-impl<Data> Worker<Data>
+impl<Data, Return> Worker<Data, Return>
 where
     Data: DeserializeOwned + 'static,
+    Return: Serialize + 'static,
 {
     pub fn new(
         queue_name: String,
         redis_url: String,
         concurrency: usize,
-        process_fn: fn(Job<Data>) -> Result<String>,
+        process_fn: fn(Job<Data>) -> Result<Return>,
     ) -> Self {
         let client = Client::open(redis_url).unwrap();
         let (sender, receiver) = tokio::sync::mpsc::channel(concurrency);
