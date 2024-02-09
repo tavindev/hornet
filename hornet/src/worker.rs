@@ -90,7 +90,6 @@ where
     }
 
     fn start_processor_task(&mut self) {
-        println!("start_processor_task");
         let prefix = self.get_prefixed_key("");
         let token = self.token.next();
         let mut client = self.client.clone();
@@ -176,7 +175,6 @@ where
                     }
                     MoveToActiveReturn::None => {
                         // No job to process
-                        println!("No job to process");
                         break;
                     }
                 }
@@ -221,6 +219,3 @@ where
         format!("bull:{}:{}", self.queue_name, key)
     }
 }
-
-#[cfg(test)]
-mod tests {}
