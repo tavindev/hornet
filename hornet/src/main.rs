@@ -8,8 +8,8 @@ struct ProcessorData {
     age: u8,
 }
 
-fn test_processor(data: Job<ProcessorData>) -> Result<String> {
-    println!("Processing: {:?}", data);
+fn test_processor(job: &Job<ProcessorData>) -> Result<String> {
+    println!("Processing: {:?}", job);
 
     Ok("Done".to_string())
 }

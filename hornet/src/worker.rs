@@ -42,6 +42,8 @@ enum TaskEvent {
     Freed,
 }
 
+type ProcessFn<Data, Return> = fn(&Job<Data>) -> Result<Return>;
+
 pub struct Worker<Data, Return>
 where
     Data: DeserializeOwned + 'static,
@@ -53,7 +55,7 @@ where
     client: Client,
     receiver: tokio::sync::mpsc::Receiver<TaskEvent>,
     sender: tokio::sync::mpsc::Sender<TaskEvent>,
-    process_fn: fn(Job<Data>) -> Result<Return>,
+    process_fn: ProcessFn<Data, Return>,
     token: WorkerToken,
 }
 
@@ -66,7 +68,7 @@ where
         queue_name: String,
         redis_url: String,
         concurrency: usize,
-        process_fn: fn(Job<JobData>) -> Result<ReturnType>,
+        process_fn: ProcessFn<JobData, ReturnType>,
     ) -> Self {
         let client = Client::open(redis_url).unwrap();
         let (sender, receiver) = tokio::sync::mpsc::channel(concurrency);
@@ -102,9 +104,7 @@ where
             ) {
                 match job {
                     MoveToActiveReturn::Job(job) => {
-                        let job_id = job.id.clone();
-
-                        match process_fn(job) {
+                        match process_fn(&job) {
                             Ok(result) => {
                                 // Move job to completed
                                 let stringified_result = serde_json::to_string(&result).unwrap();
@@ -112,7 +112,7 @@ where
                                 match MOVE_TO_FINISHED.run(
                                     &prefix,
                                     &mut client,
-                                    &job_id,
+                                    &job.id,
                                     stringified_result.as_str(),
                                     MoveToFinishedTarget::Completed,
                                     MoveToFinishedArgs {
@@ -136,7 +136,7 @@ where
                                 match MOVE_TO_FINISHED.run(
                                     &prefix,
                                     &mut client,
-                                    &job_id,
+                                    &job.id,
                                     err.to_string().as_str(),
                                     MoveToFinishedTarget::Failed,
                                     MoveToFinishedArgs {
