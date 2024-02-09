@@ -16,8 +16,15 @@ pub enum MoveToFinishedTarget {
     Failed,
 }
 
-impl Into<&str> for MoveToFinishedTarget {
-    fn into(self) -> &'static str {
+impl MoveToFinishedTarget {
+    pub fn msg_prorperty(&self) -> &'static str {
+        match self {
+            MoveToFinishedTarget::Completed => "returnvalue",
+            MoveToFinishedTarget::Failed => "failedReason",
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
         match self {
             MoveToFinishedTarget::Completed => "completed",
             MoveToFinishedTarget::Failed => "failed",
@@ -92,8 +99,6 @@ impl MoveToFinished {
             .as_millis()
             .to_string();
 
-        let target: &str = target.into();
-
         let keys = vec![
             QueueKeys::Wait.into(),
             QueueKeys::Active.into(),
@@ -105,7 +110,7 @@ impl MoveToFinished {
             QueueKeys::Paused.into(),
             QueueKeys::Meta.into(),
             QueueKeys::Pc.into(),
-            target,
+            target.as_str(),
             job_id,
             QueueKeys::Metrics.into(),
             QueueKeys::Marker.into(),
@@ -121,9 +126,9 @@ impl MoveToFinished {
         let _args = vec![
             job_id,
             timestamp.as_str(),
+            target.msg_prorperty(),
             return_msg,
-            return_msg,
-            target,
+            target.as_str(),
             "false",
             prefix,
         ];
