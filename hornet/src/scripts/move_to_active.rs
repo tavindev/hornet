@@ -162,7 +162,7 @@ mod tests {
             .as_millis()
             .to_string();
 
-        let keys = vec![
+        let keys: Vec<String> = vec![
             QueueKeys::Wait,
             QueueKeys::Active,
             QueueKeys::Prioritized,
@@ -176,8 +176,8 @@ mod tests {
             QueueKeys::Marker,
         ]
         .iter()
-        .map(|s| format!("{}{}", prefix, s))
-        .collect::<Vec<String>>();
+        .map(|s| s.with_prefix(prefix))
+        .collect();
 
         for key in keys {
             script = script.key(key)

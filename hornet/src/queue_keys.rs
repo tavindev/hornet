@@ -11,10 +11,11 @@ pub enum QueueKeys {
     Pc,
     Marker,
     Metrics,
+    Custom(String),
 }
 
 impl QueueKeys {
-    pub fn as_str(&self) -> &'static str {
+    pub fn as_str(&self) -> String {
         match self {
             QueueKeys::Wait => "wait",
             QueueKeys::Active => "active",
@@ -28,23 +29,19 @@ impl QueueKeys {
             QueueKeys::Pc => "pc",
             QueueKeys::Marker => "marker",
             QueueKeys::Metrics => "metrics",
+            QueueKeys::Custom(s) => s,
         }
+        .into()
     }
 
-    pub fn to_string(&self) -> String {
-        self.as_str().to_string()
+    pub fn with_prefix(&self, prefix: &str) -> String {
+        format!("{}{}", prefix, self.as_str())
     }
 }
 
 impl Into<String> for QueueKeys {
     fn into(self) -> String {
         self.to_string()
-    }
-}
-
-impl Into<&'static str> for QueueKeys {
-    fn into(self) -> &'static str {
-        self.as_str()
     }
 }
 

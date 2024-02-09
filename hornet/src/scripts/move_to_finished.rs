@@ -32,6 +32,12 @@ impl MoveToFinishedTarget {
     }
 }
 
+impl ToString for MoveToFinishedTarget {
+    fn to_string(&self) -> String {
+        self.as_str().to_string()
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct KeepJobs {
     pub count: i32,
@@ -99,25 +105,25 @@ impl MoveToFinished {
             .as_millis()
             .to_string();
 
-        let keys = vec![
-            QueueKeys::Wait.into(),
-            QueueKeys::Active.into(),
-            QueueKeys::Prioritized.into(),
-            QueueKeys::Events.into(),
-            QueueKeys::Stalled.into(),
-            QueueKeys::Limiter.into(),
-            QueueKeys::Delayed.into(),
-            QueueKeys::Paused.into(),
-            QueueKeys::Meta.into(),
-            QueueKeys::Pc.into(),
-            target.as_str(),
-            job_id,
-            QueueKeys::Metrics.into(),
-            QueueKeys::Marker.into(),
+        let keys: Vec<String> = [
+            QueueKeys::Wait,
+            QueueKeys::Active,
+            QueueKeys::Prioritized,
+            QueueKeys::Events,
+            QueueKeys::Stalled,
+            QueueKeys::Limiter,
+            QueueKeys::Delayed,
+            QueueKeys::Paused,
+            QueueKeys::Meta,
+            QueueKeys::Pc,
+            QueueKeys::Custom(target.to_string()),
+            QueueKeys::Custom(job_id.into()),
+            QueueKeys::Metrics,
+            QueueKeys::Marker,
         ]
         .iter()
-        .map(|s| format!("{}{}", prefix, s))
-        .collect::<Vec<String>>();
+        .map(|s| s.with_prefix(prefix))
+        .collect();
 
         for key in keys {
             script = script.key(key)
