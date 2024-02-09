@@ -38,6 +38,10 @@ impl WorkerToken {
     }
 }
 
+enum TaskEvent {
+    Freed,
+}
+
 pub struct Worker<Data, Return>
 where
     Data: DeserializeOwned + 'static,
@@ -47,8 +51,8 @@ where
     concurrency: usize,
     active_tasks: usize,
     client: Client,
-    receiver: tokio::sync::mpsc::Receiver<TaskRunnerEvent>,
-    sender: tokio::sync::mpsc::Sender<TaskRunnerEvent>,
+    receiver: tokio::sync::mpsc::Receiver<TaskEvent>,
+    sender: tokio::sync::mpsc::Sender<TaskEvent>,
     process_fn: fn(Job<Data>) -> Result<Return>,
     token: WorkerToken,
 }
@@ -161,7 +165,7 @@ where
             }
 
             // Emits a signal to the worker that it's done processing jobs
-            let _ = sender.send(TaskRunnerEvent::Freed).await;
+            let _ = sender.send(TaskEvent::Freed).await;
         });
     }
 
@@ -172,7 +176,7 @@ where
             // Does not clear all the buffer
             // What if a message is dropped?
             while self.active_tasks >= self.concurrency {
-                if let Some(TaskRunnerEvent::Freed) = self.receiver.recv().await {
+                if let Some(TaskEvent::Freed) = self.receiver.recv().await {
                     self.active_tasks -= 1;
                 }
             }
@@ -190,10 +194,6 @@ where
     fn get_prefixed_key(&self, key: &str) -> String {
         format!("bull:{}:{}", self.queue_name, key)
     }
-}
-
-enum TaskRunnerEvent {
-    Freed,
 }
 
 #[cfg(test)]
