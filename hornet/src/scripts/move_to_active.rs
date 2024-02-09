@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use crate::{generate_script_struct, job::Job};
+use crate::{generate_script_struct, job::Job, queue_keys::QueueKeys};
 
 use anyhow::Result;
 use redis::{FromRedisValue, ToRedisArgs};
@@ -24,22 +24,22 @@ impl MoveToActive {
             .as_millis()
             .to_string();
 
-        let keys = vec![
-            "wait",
-            "active",
-            "prioritized",
-            "events",
-            "stalled",
-            "limiter",
-            "delayed",
-            "paused",
-            "meta",
-            "pc",
-            "marker",
+        let keys: Vec<String> = [
+            QueueKeys::Wait,
+            QueueKeys::Active,
+            QueueKeys::Prioritized,
+            QueueKeys::Events,
+            QueueKeys::Stalled,
+            QueueKeys::Limiter,
+            QueueKeys::Delayed,
+            QueueKeys::Paused,
+            QueueKeys::Meta,
+            QueueKeys::Pc,
+            QueueKeys::Marker,
         ]
         .iter()
-        .map(|s| format!("{}{}", prefix, s))
-        .collect::<Vec<String>>();
+        .map(|s| s.with_prefix(prefix))
+        .collect();
 
         for key in keys {
             script = script.key(key)
