@@ -53,16 +53,16 @@ where
     token: WorkerToken,
 }
 
-impl<Data, Return> Worker<Data, Return>
+impl<JobData, ReturnType> Worker<JobData, ReturnType>
 where
-    Data: DeserializeOwned + 'static,
-    Return: Serialize + 'static,
+    JobData: DeserializeOwned + 'static,
+    ReturnType: Serialize + 'static,
 {
     pub fn new(
         queue_name: String,
         redis_url: String,
         concurrency: usize,
-        process_fn: fn(Job<Data>) -> Result<Return>,
+        process_fn: fn(Job<JobData>) -> Result<ReturnType>,
     ) -> Self {
         let client = Client::open(redis_url).unwrap();
         let (sender, receiver) = tokio::sync::mpsc::channel(concurrency);
@@ -79,77 +79,20 @@ where
         }
     }
 
-    pub async fn run(&mut self) {
-        let mut connection = self.client.get_connection().unwrap();
+    fn start_processor_task(&mut self) {
+        let prefix = self.get_prefixed_key("");
+        let token = self.token.next();
+        let mut client = self.client.clone();
+        let sender = self.sender.clone();
+        let process_fn = self.process_fn;
 
-        loop {
-            // Does not clear all the buffer
-            // What if a message is dropped?
-            while self.active_tasks >= self.concurrency {
-                if let Some(TaskRunnerEvent::Freed) = self.receiver.recv().await {
-                    self.active_tasks -= 1;
-                }
-            }
-
-            // Marker is used to notify worker of new jobs
-            if let Ok(_) = connection
-                .bzpopmin::<String, (String, String, f64)>(self.get_prefixed_key("marker"), 10000.)
-            {
-                let task_runner = TaskRunner::new(
-                    self.get_prefixed_key(""),
-                    self.token.next(),
-                    self.client.clone(),
-                    self.sender.clone(),
-                );
-                self.active_tasks += 1;
-                task_runner.run(self.process_fn);
-            }
-        }
-    }
-
-    fn get_prefixed_key(&self, key: &str) -> String {
-        format!("bull:{}:{}", self.queue_name, key)
-    }
-}
-
-enum TaskRunnerEvent {
-    Freed,
-}
-
-struct TaskRunner {
-    prefix: String,
-    token: String,
-    client: Client,
-    sender: tokio::sync::mpsc::Sender<TaskRunnerEvent>,
-}
-
-impl TaskRunner {
-    fn new(
-        prefix: String,
-        token: String,
-        client: Client,
-        sender: tokio::sync::mpsc::Sender<TaskRunnerEvent>,
-    ) -> Self {
-        TaskRunner {
-            prefix,
-            token,
-            client,
-            sender,
-        }
-    }
-
-    fn run<Data, ReturnType>(mut self, process_fn: fn(Job<Data>) -> Result<ReturnType>)
-    where
-        Data: DeserializeOwned + 'static,
-        ReturnType: Serialize + 'static,
-    {
         let _ = tokio::spawn(async move {
             // Move to active script
-            while let Ok(job) = MOVE_TO_ACTIVE.run::<Data>(
-                &self.prefix,
-                &mut self.client,
+            while let Ok(job) = MOVE_TO_ACTIVE.run::<JobData>(
+                &prefix,
+                &mut client,
                 MoveToActiveArgs {
-                    token: self.token.clone(),
+                    token: token.clone(),
                     lock_duration: 10_000,
                 },
             ) {
@@ -164,13 +107,13 @@ impl TaskRunner {
 
                                 match MOVE_TO_FINISHED
                                     .run(
-                                        &self.prefix,
-                                        &mut self.client,
+                                        &prefix,
+                                        &mut client,
                                         &job_id,
                                         stringified_result.as_str(),
                                         MoveToFinishedTarget::Completed,
                                         MoveToFinishedArgs {
-                                            token: self.token.clone(),
+                                            token: token.clone(),
                                             keep_jobs: KeepJobs { count: -1 },
                                             lock_duration: 10_000,
                                             max_attempts: 1,
@@ -191,13 +134,13 @@ impl TaskRunner {
                                 // Move job to failed
                                 match MOVE_TO_FINISHED
                                     .run(
-                                        &self.prefix,
-                                        &mut self.client,
+                                        &prefix,
+                                        &mut client,
                                         &job_id,
                                         err.to_string().as_str(),
                                         MoveToFinishedTarget::Failed,
                                         MoveToFinishedArgs {
-                                            token: self.token.clone(),
+                                            token: token.clone(),
                                             keep_jobs: KeepJobs { count: -1 },
                                             lock_duration: 10_000,
                                             max_attempts: 1,
@@ -224,9 +167,39 @@ impl TaskRunner {
             }
 
             // Emits a signal to the worker that it's done processing jobs
-            let _ = self.sender.send(TaskRunnerEvent::Freed).await;
+            let _ = sender.send(TaskRunnerEvent::Freed).await;
         });
     }
+
+    pub async fn run(&mut self) {
+        let mut connection = self.client.get_connection().unwrap();
+
+        loop {
+            // Does not clear all the buffer
+            // What if a message is dropped?
+            while self.active_tasks >= self.concurrency {
+                if let Some(TaskRunnerEvent::Freed) = self.receiver.recv().await {
+                    self.active_tasks -= 1;
+                }
+            }
+
+            // Marker is used to notify worker of new jobs
+            if let Ok(_) = connection
+                .bzpopmin::<String, (String, String, f64)>(self.get_prefixed_key("marker"), 10000.)
+            {
+                self.active_tasks += 1;
+                self.start_processor_task();
+            }
+        }
+    }
+
+    fn get_prefixed_key(&self, key: &str) -> String {
+        format!("bull:{}:{}", self.queue_name, key)
+    }
+}
+
+enum TaskRunnerEvent {
+    Freed,
 }
 
 #[cfg(test)]
