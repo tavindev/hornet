@@ -21,6 +21,8 @@ lazy_static! {
     static ref RETRY_JOB: RetryJob = RetryJob::new();
 }
 
+const DEFAULT_LOCK_DURATION: u64 = 30_000;
+
 struct WorkerToken {
     token: String,
     postfix: u64,
@@ -122,7 +124,7 @@ where
                                     MoveToFinishedArgs {
                                         token: token.clone(),
                                         keep_jobs: KeepJobs { count: -1 },
-                                        lock_duration: 10_000,
+                                        lock_duration: DEFAULT_LOCK_DURATION,
                                         max_attempts: 1,
                                         max_metrics_size: 100,
                                         fail_parent_on_fail: false,
@@ -157,7 +159,7 @@ where
                                         MoveToFinishedArgs {
                                             token: token.clone(),
                                             keep_jobs: KeepJobs { count: -1 },
-                                            lock_duration: 10_000,
+                                            lock_duration: DEFAULT_LOCK_DURATION,
                                             max_attempts: 1,
                                             max_metrics_size: 100,
                                             fail_parent_on_fail: false,
