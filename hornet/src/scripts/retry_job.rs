@@ -51,7 +51,8 @@ impl RetryJob {
         &self,
         prefix: &str,
         mut client: &mut redis::Client,
-        opts: RetryJobArgs,
+        job_id: &str,
+        token: &str,
     ) -> Result<RetryJobReturn> {
         let mut script = &mut self.0.prepare_invoke();
 
@@ -85,7 +86,9 @@ impl RetryJob {
         let res = script
             .arg(prefix)
             .arg(timestamp)
-            .arg(opts)
+            .arg("R") // TODO: LIFO
+            .arg(job_id)
+            .arg(token)
             .invoke::<RetryJobReturn>(&mut client)?;
 
         Ok(res)
