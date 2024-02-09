@@ -200,18 +200,18 @@ where
 
             if self.drained {
                 // Marker is used to notify worker of new jobs
-                if let Ok(_) = connection.bzpopmin::<String, (String, String, f64)>(
+                if let Err(_) = connection.bzpopmin::<String, (String, String, f64)>(
                     self.get_prefixed_key("marker"),
                     10000.,
                 ) {
-                    self.drained = false;
-                    self.active_tasks += 1;
-                    self.start_processor_task();
+                    continue;
                 }
-            } else {
-                self.active_tasks += 1;
-                self.start_processor_task();
+
+                self.drained = false;
             }
+
+            self.active_tasks += 1;
+            self.start_processor_task();
         }
     }
 
