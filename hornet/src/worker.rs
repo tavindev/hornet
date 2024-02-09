@@ -160,7 +160,7 @@ where
                                             token: token.clone(),
                                             keep_jobs: KeepJobs { count: -1 },
                                             lock_duration: DEFAULT_LOCK_DURATION,
-                                            max_attempts: 1,
+                                            max_attempts: job.opts.attempts,
                                             max_metrics_size: 100,
                                             fail_parent_on_fail: false,
                                             remove_dependency_on_fail: false,

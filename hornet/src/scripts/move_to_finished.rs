@@ -51,7 +51,7 @@ pub struct MoveToFinishedArgs {
     #[serde(rename = "lockDuration")]
     pub lock_duration: u64, // in milliseconds
     #[serde(rename = "attempts")]
-    pub max_attempts: u64,
+    pub max_attempts: u32,
     #[serde(rename = "maxMetricsSize")]
     pub max_metrics_size: u64,
     #[serde(rename = "fpof")]
