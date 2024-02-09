@@ -6,6 +6,7 @@ use crate::{
             KeepJobs, MoveToFinished, MoveToFinishedArgs, MoveToFinishedReturn,
             MoveToFinishedTarget,
         },
+        retry_job::{RetryJob, RetryJobReturn},
     },
 };
 use anyhow::Result;
@@ -17,6 +18,7 @@ use uuid::Uuid;
 lazy_static! {
     static ref MOVE_TO_ACTIVE: MoveToActive = MoveToActive::new();
     static ref MOVE_TO_FINISHED: MoveToFinished = MoveToFinished::new();
+    static ref RETRY_JOB: RetryJob = RetryJob::new();
 }
 
 struct WorkerToken {
@@ -57,6 +59,7 @@ where
     sender: tokio::sync::mpsc::Sender<TaskEvent>,
     process_fn: ProcessFn<Data, Return>,
     token: WorkerToken,
+    drained: bool,
 }
 
 impl<JobData, ReturnType> Worker<JobData, ReturnType>
@@ -82,10 +85,12 @@ where
             sender,
             process_fn,
             token: WorkerToken::new(),
+            drained: false,
         }
     }
 
     fn start_processor_task(&mut self) {
+        println!("start_processor_task");
         let prefix = self.get_prefixed_key("");
         let token = self.token.next();
         let mut client = self.client.clone();
@@ -132,26 +137,38 @@ where
                                 }
                             }
                             Err(err) => {
-                                // Move job to failed
-                                match MOVE_TO_FINISHED.run(
-                                    &prefix,
-                                    &mut client,
-                                    &job.id,
-                                    err.to_string().as_str(),
-                                    MoveToFinishedTarget::Failed,
-                                    MoveToFinishedArgs {
-                                        token: token.clone(),
-                                        keep_jobs: KeepJobs { count: -1 },
-                                        lock_duration: 10_000,
-                                        max_attempts: 1,
-                                        max_metrics_size: 100,
-                                        fail_parent_on_fail: false,
-                                        remove_dependency_on_fail: false,
-                                    },
-                                ) {
-                                    Ok(MoveToFinishedReturn::Ok) => {}
-                                    res => {
-                                        println!("Error moving job to failed: {:?}", res);
+                                // Check if we should retry
+                                if job.attempts_made.unwrap_or(0) + 1 < job.opts.attempts {
+                                    match RETRY_JOB.run(&prefix, &mut client, &job.id, &token) {
+                                        Ok(RetryJobReturn::Ok) => {
+                                            println!("Retrying job");
+                                        }
+                                        res => {
+                                            println!("Error retrying job: {:?}", res);
+                                        }
+                                    }
+                                } else {
+                                    // Move job to failed
+                                    match MOVE_TO_FINISHED.run(
+                                        &prefix,
+                                        &mut client,
+                                        &job.id,
+                                        err.to_string().as_str(),
+                                        MoveToFinishedTarget::Failed,
+                                        MoveToFinishedArgs {
+                                            token: token.clone(),
+                                            keep_jobs: KeepJobs { count: -1 },
+                                            lock_duration: 10_000,
+                                            max_attempts: 1,
+                                            max_metrics_size: 100,
+                                            fail_parent_on_fail: false,
+                                            remove_dependency_on_fail: false,
+                                        },
+                                    ) {
+                                        Ok(MoveToFinishedReturn::Ok) => {}
+                                        res => {
+                                            println!("Error moving job to failed: {:?}", res);
+                                        }
                                     }
                                 }
                             }
@@ -159,6 +176,7 @@ where
                     }
                     MoveToActiveReturn::None => {
                         // No job to process
+                        println!("No job to process");
                         break;
                     }
                 }
@@ -178,13 +196,21 @@ where
             while self.active_tasks >= self.concurrency {
                 if let Some(TaskEvent::Freed) = self.receiver.recv().await {
                     self.active_tasks -= 1;
+                    self.drained = true;
                 }
             }
 
-            // Marker is used to notify worker of new jobs
-            if let Ok(_) = connection
-                .bzpopmin::<String, (String, String, f64)>(self.get_prefixed_key("marker"), 10000.)
-            {
+            if self.drained {
+                // Marker is used to notify worker of new jobs
+                if let Ok(_) = connection.bzpopmin::<String, (String, String, f64)>(
+                    self.get_prefixed_key("marker"),
+                    10000.,
+                ) {
+                    self.drained = false;
+                    self.active_tasks += 1;
+                    self.start_processor_task();
+                }
+            } else {
                 self.active_tasks += 1;
                 self.start_processor_task();
             }

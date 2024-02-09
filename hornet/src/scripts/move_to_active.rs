@@ -1,6 +1,10 @@
 use std::time::SystemTime;
 
-use crate::{generate_script_struct, job::Job, queue_keys::QueueKeys};
+use crate::{
+    generate_script_struct,
+    job::{self, Job, JobBuilder},
+    queue_keys::QueueKeys,
+};
 
 use anyhow::Result;
 use redis::{FromRedisValue, ToRedisArgs};
@@ -89,42 +93,69 @@ impl<JobData: DeserializeOwned> FromRedisValue for MoveToActiveReturn<JobData> {
                     return Ok(MoveToActiveReturn::None)
                 }
                 [Value::Bulk(raw_job), Value::Data(job_id), Value::Int(_), Value::Int(_)] => {
-                    let raw_job = match raw_job.as_slice() {
-                        [_, Value::Data(name), _, Value::Data(data), _, Value::Data(opts), _, Value::Data(timestamp), _, Value::Data(delay), _, Value::Data(priority), _, Value::Data(processed_on), _, Value::Data(ats)] => {
-                            Ok(Job {
-                                id: String::from_utf8(job_id.to_vec()).unwrap(),
-                                name: String::from_utf8(name.to_vec()).unwrap(),
-                                data: serde_json::from_slice(data).unwrap(),
-                                opts: String::from_utf8(opts.to_vec()).unwrap(),
-                                timestamp: String::from_utf8(timestamp.to_vec())
-                                    .unwrap()
-                                    .parse::<u128>()
-                                    .unwrap(),
-                                delay: String::from_utf8(delay.to_vec())
-                                    .unwrap()
-                                    .parse::<u128>()
-                                    .unwrap(),
-                                priority: String::from_utf8(priority.to_vec())
-                                    .unwrap()
-                                    .parse::<u32>()
-                                    .unwrap(),
-                                processed_on: String::from_utf8(processed_on.to_vec())
-                                    .unwrap()
-                                    .parse::<u128>()
-                                    .unwrap(),
-                                ats: String::from_utf8(ats.to_vec())
-                                    .unwrap()
-                                    .parse::<u32>()
-                                    .unwrap(),
-                            })
-                        }
-                        _ => Err(redis::RedisError::from((
-                            redis::ErrorKind::TypeError,
-                            "Invalid response type",
-                        ))),
-                    }?;
+                    let mut job_builder: JobBuilder<JobData> = JobBuilder::new();
+                    let slices = raw_job.chunks(2).collect::<Vec<_>>();
 
-                    Ok(MoveToActiveReturn::Job(raw_job))
+                    job_builder = job_builder.id(String::from_utf8(job_id.to_vec()).unwrap());
+
+                    for slice in slices {
+                        match slice {
+                            [Value::Data(key), Value::Data(value)] => {
+                                let key = String::from_utf8(key.to_vec()).unwrap();
+
+                                job_builder =
+                                    match key.as_str() {
+                                        "name" => job_builder
+                                            .name(String::from_utf8(value.to_vec()).unwrap()),
+                                        "data" => {
+                                            job_builder.data(serde_json::from_slice(value).unwrap())
+                                        }
+                                        "opts" => job_builder
+                                            .opts(String::from_utf8(value.to_vec()).unwrap()),
+                                        "timestamp" => job_builder.timestamp(
+                                            String::from_utf8(value.to_vec())
+                                                .unwrap()
+                                                .parse::<u128>()
+                                                .unwrap(),
+                                        ),
+                                        "delay" => job_builder.delay(
+                                            String::from_utf8(value.to_vec())
+                                                .unwrap()
+                                                .parse::<u128>()
+                                                .unwrap(),
+                                        ),
+                                        "priority" => job_builder.priority(
+                                            String::from_utf8(value.to_vec())
+                                                .unwrap()
+                                                .parse::<u32>()
+                                                .unwrap(),
+                                        ),
+                                        "processedOn" => job_builder.processed_on(
+                                            String::from_utf8(value.to_vec())
+                                                .unwrap()
+                                                .parse::<u128>()
+                                                .unwrap(),
+                                        ),
+                                        "ats" => job_builder.attempts_started(
+                                            String::from_utf8(value.to_vec())
+                                                .unwrap()
+                                                .parse::<u32>()
+                                                .unwrap(),
+                                        ),
+                                        "atm" => job_builder.attempts_made(
+                                            String::from_utf8(value.to_vec())
+                                                .unwrap()
+                                                .parse::<u32>()
+                                                .unwrap(),
+                                        ),
+                                        _ => job_builder,
+                                    };
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    Ok(MoveToActiveReturn::Job(job_builder.build()))
                 }
                 _ => {
                     return Err(redis::RedisError::from((

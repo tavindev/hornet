@@ -63,8 +63,8 @@ impl RetryJob {
             .to_string();
 
         let keys: Vec<String> = [
-            QueueKeys::Wait,
             QueueKeys::Active,
+            QueueKeys::Wait,
             QueueKeys::Paused,
             QueueKeys::Custom(job_id.to_string()),
             QueueKeys::Meta,
@@ -85,7 +85,7 @@ impl RetryJob {
         let res = script
             .arg(prefix)
             .arg(timestamp)
-            .arg("RPUSH") // TODO: LIFO
+            .arg("LPUSH") // TODO: LIFO
             .arg(job_id)
             .arg(token)
             .invoke::<RetryJobReturn>(&mut client)?;
