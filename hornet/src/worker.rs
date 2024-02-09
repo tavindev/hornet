@@ -105,26 +105,23 @@ where
                                 // Move job to completed
                                 let stringified_result = serde_json::to_string(&result).unwrap();
 
-                                match MOVE_TO_FINISHED
-                                    .run(
-                                        &prefix,
-                                        &mut client,
-                                        &job_id,
-                                        stringified_result.as_str(),
-                                        MoveToFinishedTarget::Completed,
-                                        MoveToFinishedArgs {
-                                            token: token.clone(),
-                                            keep_jobs: KeepJobs { count: -1 },
-                                            lock_duration: 10_000,
-                                            max_attempts: 1,
-                                            max_metrics_size: 100,
-                                            fail_parent_on_fail: false,
-                                            remove_dependency_on_fail: false,
-                                        },
-                                    )
-                                    .unwrap()
-                                {
-                                    MoveToFinishedReturn::Ok => {}
+                                match MOVE_TO_FINISHED.run(
+                                    &prefix,
+                                    &mut client,
+                                    &job_id,
+                                    stringified_result.as_str(),
+                                    MoveToFinishedTarget::Completed,
+                                    MoveToFinishedArgs {
+                                        token: token.clone(),
+                                        keep_jobs: KeepJobs { count: -1 },
+                                        lock_duration: 10_000,
+                                        max_attempts: 1,
+                                        max_metrics_size: 100,
+                                        fail_parent_on_fail: false,
+                                        remove_dependency_on_fail: false,
+                                    },
+                                ) {
+                                    Ok(MoveToFinishedReturn::Ok) => {}
                                     res => {
                                         println!("Error moving job to completed: {:?}", res);
                                     }
@@ -132,26 +129,23 @@ where
                             }
                             Err(err) => {
                                 // Move job to failed
-                                match MOVE_TO_FINISHED
-                                    .run(
-                                        &prefix,
-                                        &mut client,
-                                        &job_id,
-                                        err.to_string().as_str(),
-                                        MoveToFinishedTarget::Failed,
-                                        MoveToFinishedArgs {
-                                            token: token.clone(),
-                                            keep_jobs: KeepJobs { count: -1 },
-                                            lock_duration: 10_000,
-                                            max_attempts: 1,
-                                            max_metrics_size: 100,
-                                            fail_parent_on_fail: false,
-                                            remove_dependency_on_fail: false,
-                                        },
-                                    )
-                                    .unwrap()
-                                {
-                                    MoveToFinishedReturn::Ok => {}
+                                match MOVE_TO_FINISHED.run(
+                                    &prefix,
+                                    &mut client,
+                                    &job_id,
+                                    err.to_string().as_str(),
+                                    MoveToFinishedTarget::Failed,
+                                    MoveToFinishedArgs {
+                                        token: token.clone(),
+                                        keep_jobs: KeepJobs { count: -1 },
+                                        lock_duration: 10_000,
+                                        max_attempts: 1,
+                                        max_metrics_size: 100,
+                                        fail_parent_on_fail: false,
+                                        remove_dependency_on_fail: false,
+                                    },
+                                ) {
+                                    Ok(MoveToFinishedReturn::Ok) => {}
                                     res => {
                                         println!("Error moving job to failed: {:?}", res);
                                     }
